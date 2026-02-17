@@ -9,8 +9,17 @@ import logging
 import json
 import time
 import html
-from typing import Optional
+import io
+import random
+from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
+
+# Charting imports
+import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib
+# Use a non-interactive backend for Matplotlib to work in threads/background
+matplotlib.use('Agg')
 
 # Telegram imports
 from telegram import Update
@@ -50,7 +59,7 @@ MYSQL_CONFIG = {
     'database': os.getenv('MYSQL_DATABASE', 'ai_demo')
 }
 
-print("CRITICAL DEBUG: BOT VERSION 1.9 IS RUNNING")
+print("CRITICAL DEBUG: BOT VERSION 2.2 IS RUNNING")
 # Initialize Gemini AI
 logger.info("Initializing Gemini AI with model: gemini-2.0-flash")
 genai.configure(api_key=GEMINI_API_KEY)
@@ -159,17 +168,16 @@ Rules:
 
 SQL Query:"""
 
-        max_retries = 3
-        retry_delay = 2  # seconds
+        max_retries = 5
+        base_delay = 2  # seconds
 
         for attempt in range(max_retries):
             try:
                 response = model.generate_content(prompt)
                 sql_query = response.text.strip()
                 
-                # Clean up the query (remove markdown if present)
+                # Clean up the query
                 sql_query = sql_query.replace('```sql', '').replace('```', '').strip()
-                
                 logger.info(f"Generated SQL: {sql_query}")
                 
                 return {
@@ -179,9 +187,10 @@ SQL Query:"""
                 
             except Exception as e:
                 if "429" in str(e) and attempt < max_retries - 1:
-                    logger.warning(f"Gemini API rate limit hit (429). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    # Exponential backoff with jitter
+                    delay = (base_delay * (2 ** attempt)) + (random.uniform(0, 1))
+                    logger.warning(f"Gemini API rate limit hit (429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
                     continue
                     
                 logger.error(f"AI generation error: {e}")
@@ -247,8 +256,8 @@ Rules:
 
 Response:"""
 
-        max_retries = 2
-        retry_delay = 2
+        max_retries = 3
+        base_delay = 2
 
         for attempt in range(max_retries):
             try:
@@ -267,11 +276,78 @@ Response:"""
                 
             except Exception as e:
                 if "429" in str(e) and attempt < max_retries - 1:
-                    time.sleep(retry_delay)
+                    delay = (base_delay * (2 ** attempt)) + (random.uniform(0, 1))
+                    logger.warning(f"Humor generation hit rate limit. Retrying in {delay:.2f}s...")
+                    time.sleep(delay)
                     continue
                 logger.error(f"Commentary generation error: {e}")
                 # Fallback to plain data if AI fails
                 return f"<b>Here's what I found:</b>\n\n{formatted_data}"
+
+
+    def is_chart_requested(self, user_message: str) -> bool:
+        """Check if the user is asking for a visual/chart."""
+        keywords = ['chart', 'graph', 'plot', 'visualize', 'draw', 'trend', 'pie', 'bar chart', 'line graph']
+        msg = user_message.lower()
+        return any(k in msg for k in keywords)
+
+    def create_chart(self, user_message: str, data: List[Dict[str, Any]]) -> Optional[bytes]:
+        """Generate a Matplotlib chart and return as bytes."""
+        try:
+            if not data:
+                return None
+                
+            # Convert data to DataFrame
+            df = pd.DataFrame(data)
+            
+            # Force conversion of numeric-looking columns (like Decimal from MySQL)
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except (ValueError, TypeError):
+                    continue
+            
+            # Determine suitable columns for charting
+            num_cols = df.select_dtypes(include=['number']).columns.tolist()
+            str_cols = df.select_dtypes(exclude=['number']).columns.tolist()
+            
+            if not num_cols:
+                logger.warning("No numeric columns found for charting")
+                return None
+                
+            label_col = str_cols[0] if str_cols else df.columns[0]
+            value_col = num_cols[0]
+            
+            # Create the plot
+            plt.figure(figsize=(10, 6))
+            
+            # Simple heuristic for chart type
+            if 'pie' in user_message.lower():
+                plt.pie(df[value_col], labels=df[label_col], autopct='%1.1f%%', colors=plt.cm.Paired.colors)
+                plt.axis('equal')
+            elif 'line' in user_message.lower() or 'trend' in user_message.lower():
+                plt.plot(df[label_col], df[value_col], marker='o', linestyle='-', color='skyblue', linewidth=2)
+                plt.xticks(rotation=45)
+                plt.grid(True, linestyle='--', alpha=0.6)
+            else:
+                # Default to bar chart
+                plt.bar(df[label_col], df[value_col], color='skyblue')
+                plt.xticks(rotation=45)
+                plt.grid(axis='y', linestyle='--', alpha=0.6)
+            
+            plt.title(f"Visual Analysis: {value_col} by {label_col}", fontsize=14, fontweight='bold')
+            plt.tight_layout()
+            
+            # Save to buffer
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150)
+            plt.close()
+            buf.seek(0)
+            return buf.getvalue()
+            
+        except Exception as e:
+            logger.error(f"Chart generation error: {e}")
+            return None
 
 
 # Initialize AI Assistant
@@ -364,6 +440,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Generate human-like commentary wrapped around the data
     if query_result.get('success') and query_result.get('data') is not None:
         final_response = ai_assistant.generate_commentary(user_message, raw_data)
+        
+        # Check if user wanted a chart
+        if ai_assistant.is_chart_requested(user_message):
+            chart_bytes = ai_assistant.create_chart(user_message, query_result.get('data'))
+            if chart_bytes:
+                await update.message.reply_photo(
+                    photo=chart_bytes,
+                    caption=final_response,
+                    parse_mode='HTML'
+                )
+                return
     else:
         final_response = raw_data
     
@@ -392,7 +479,7 @@ def main():
         logger.error("GEMINI_API_KEY not set in .env file")
         return
     
-    logger.info("Starting Telegram AI Business Assistant Bot v1.7...")
+    logger.info("Starting Telegram AI Business Assistant Bot v2.0...")
     logger.info(f"Targeting MySQL Database: {MYSQL_CONFIG['database']} on {MYSQL_CONFIG['host']}")
     
     # Create application
