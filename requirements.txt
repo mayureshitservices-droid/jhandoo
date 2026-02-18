@@ -5,3 +5,6 @@ mysql-connector-python>=8.0.0
 matplotlib
 pandas
 Pillow
+apscheduler
+fpdf2
+requests
