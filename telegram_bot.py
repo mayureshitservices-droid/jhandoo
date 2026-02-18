@@ -11,6 +11,7 @@ import time
 import html
 import io
 import random
+import pathlib
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -67,7 +68,7 @@ MYSQL_CONFIG = {
     'database': os.getenv('MYSQL_DATABASE', 'ai_demo')
 }
 
-print("CRITICAL DEBUG: BOT VERSION 3.1 IS RUNNING")
+print("CRITICAL DEBUG: BOT VERSION 4.2 IS RUNNING")
 # Initialize Gemini AI
 logger.info("Initializing Gemini AI with model: gemini-2.0-flash")
 genai.configure(api_key=GEMINI_API_KEY)
@@ -224,8 +225,8 @@ class AIAssistant:
         if len(self.memory[chat_id]) > 10:
             self.memory[chat_id] = self.memory[chat_id][-10:]
     
-    def dispatch(self, user_message: str, chat_id: int) -> dict:
-        """Route the user request using context and intent."""
+    def dispatch(self, user_message: str, chat_id: int, audio_path: Optional[str] = None) -> dict:
+        """Route the user request using context and intent. Supports voice."""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         history = self.get_history(chat_id)
         
@@ -235,24 +236,34 @@ Conversation Context:
 {history}
 
 Available Tools:
-1. query_database: For business/sales questions. Requires 'sql'.
+1. query_database: For ALL data questions, including charts, graphs, or visual trends.
 2. set_reminder: For setting alerts. Requires 'time' (YYYY-MM-DD HH:MM:SS) and 'message'.
 3. get_weather: For weather info. Requires 'city'.
 4. convert_currency: For exchange rates. Requires 'amount', 'from', 'to'.
-5. generate_pdf: For creating report documents.
+5. generate_pdf: ONLY for exporting data to a downloadable PDF document/report.
 6. chit_chat: For greetings or non-task talk.
 
-User Message: "{user_message}"
+Constraint: A request for a "chart", "graph", or "plot" should go to 'query_database' UNLESS the user explicitly says "PDF" or "Report".
 
 Respond ONLY with a JSON object:
 {{
   "tool": "tool_name",
   "parameters": {{...}},
-  "thought": "brief reasoning taking context into account"
+  "thought": "brief reasoning taking context into account",
+  "transcription": "If user provided audio, include the text here"
 }}"""
 
         try:
-            response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+            content_parts = []
+            if audio_path:
+                # Use Gemini's multimodal support for audio
+                voice_data = pathlib.Path(audio_path).read_bytes()
+                content_parts.append({"mime_type": "audio/ogg", "data": voice_data})
+                content_parts.append(f"Listen to the user's voice message. {prompt}")
+            else:
+                content_parts.append(f"{prompt}\n\nUser Message: \"{user_message}\"")
+
+            response = model.generate_content(content_parts, generation_config={"response_mime_type": "application/json"})
             return json.loads(response.text.strip())
         except Exception as e:
             logger.error(f"Dispatch error: {e}")
@@ -411,22 +422,25 @@ class AssistantTools:
     def generate_pdf_report(title: str, data_text: str, chart_bytes: Optional[bytes] = None) -> bytes:
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
+        pdf.set_font("helvetica", 'B', 16)
         pdf.cell(0, 10, title, 0, 1, 'C')
-        pdf.ln(10)
+        pdf.ln(5)
         
         if chart_bytes:
-            img_path = "temp_chart.png"
+            # Use a unique filename or tempfile
+            img_path = f"temp_chart_{int(time.time())}.png"
             with open(img_path, "wb") as f:
                 f.write(chart_bytes)
+            # Add image and ensure it doesn't overlap text
             pdf.image(img_path, x=10, w=190)
-            pdf.ln(100)
-            os.remove(img_path)
+            pdf.ln(115) # Advance cursor past image
+            if os.path.exists(img_path):
+                os.remove(img_path)
 
-        pdf.set_font("Arial", size=10)
-        # Clean data for PDF (remove HTML tags)
-        clean_text = data_text.replace('<b>','').replace('</b>','').replace('<code>','').replace('</code>','')
-        pdf.multi_cell(0, 8, clean_text)
+        pdf.set_font("helvetica", size=10)
+        # Clean data for PDF (remove HTML tags and newlines for clean printing)
+        clean_text = data_text.replace('<b>','').replace('</b>','').replace('<i>','').replace('</i>','').replace('<code>','').replace('</code>','')
+        pdf.multi_cell(0, 10, clean_text)
         
         return pdf.output()
 
@@ -485,20 +499,54 @@ async def schema_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"```\n{schema}\n```", parse_mode='Markdown')
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle user messages using the Contextual Dispatcher."""
-    user_message = update.message.text
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming voice messages."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     
     await update.message.chat.send_action(action="typing")
     
+    # Download the voice file
+    voice = update.message.voice
+    file = await context.bot.get_file(voice.file_id)
+    temp_path = f"voice_{user_id}_{int(time.time())}.ogg"
+    await file.download_to_drive(temp_path)
+    
+    # Ask the Dispatcher to 'hear' the message
+    decision = ai_assistant.dispatch("", chat_id, audio_path=temp_path)
+    
+    # Transcribed text (if provided by AI)
+    transcription = decision.get('transcription', "Voice Message")
+    
+    # Cleanup file
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    
+    # Process the decision using the transcription as the effective message
+    await process_decision(update, context, decision, transcription)
+
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle user messages using the Contextual Dispatcher."""
+    user_message = update.message.text
+    chat_id = update.effective_chat.id
+    
+    await update.message.chat.send_action(action="typing")
+    
     # 1. Ask the Dispatcher what to do (using memory)
     decision = ai_assistant.dispatch(user_message, chat_id)
+    await process_decision(update, context, decision, user_message)
+
+
+async def process_decision(update: Update, context: ContextTypes.DEFAULT_TYPE, decision: dict, user_message: str):
+    """Core logic to process an AI decision (shared by text and voice)."""
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    
     tool = decision.get('tool', 'chit_chat')
     params = decision.get('parameters', {})
     
-    # 2. Store user message in memory
+    # Store user message in memory
     ai_assistant.add_to_memory(chat_id, "User", user_message)
     
     logger.info(f"User {user_id} -> Tool: {tool} | Thought: {decision.get('thought')}")
@@ -558,7 +606,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_text = res.text
         await update.message.reply_text(final_text)
 
-    # 3. Store assistant response in memory
+    # Store assistant response in memory
     ai_assistant.add_to_memory(chat_id, "Jhandoo", final_text)
 
 
@@ -594,6 +642,7 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("schema", schema_command))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Add error handler
