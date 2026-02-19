@@ -1,5 +1,9 @@
 .env
+config.json
 backups/
+dist/
+build/
+*.exe
 __pycache__/
 *.pyc
 *.pyo

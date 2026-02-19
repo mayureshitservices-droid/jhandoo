@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnalystIQ | A Professional Data Analyst, Business Companion and Virtual Assistant</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script type="text/javascript" src="/eel.js"></script>
+</head>
+
+<body>
+    <div id="app" class="liquid-dark">
+        <!-- Background Glows -->
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+
+        <main class="glass-panel main-panel">
+            <!-- Navigation Sidebar (SaaS Style) -->
+            <aside class="sidebar">
+                <div class="logo">
+                    <span class="logo-icon">🚀</span>
+                    <span class="logo-text">ANALYST<span>IQ</span></span>
+                </div>
+                <nav>
+                    <button class="nav-item active" onclick="showPage('intro')">Introduction</button>
+                    <button class="nav-item" onclick="showPage('db')">Database</button>
+                    <button class="nav-item" onclick="showPage('api')">System Keys</button>
+                    <button class="nav-item" onclick="showPage('whitelist')">Allowed Users</button>
+                    <button class="nav-item" onclick="showPage('status')">System Status</button>
+                    <button class="nav-item" onclick="showPage('dev')">Architect</button>
+                </nav>
+            </aside>
+
+            <!-- Page Viewport -->
+            <section class="viewport">
+                <!-- Introduction Page -->
+                <div id="page-intro" class="page active">
+                    <header>
+                        <p class="tagline">A PROFESSIONAL DATA ANALYST, BUSINESS COMPANION AND VIRTUAL ASSISTANT -AT
+                            YOUR FINGERTIPS</p>
+                        <h1>Capabilities</h1>
+                    </header>
+                    <div class="scroll-content">
+                        <div class="outcome-card">
+                            <h3>01. Just Chat</h3>
+                            <p>Talk to your business data like a friend. It understands you in any language and gives
+                                instant answers via Telegram.</p>
+                        </div>
+                        <div class="outcome-card">
+                            <h3>02. Voice First</h3>
+                            <p>Too busy to type? Just send a quick voice note to track revenue or set reminders while
+                                you're on the move.</p>
+                        </div>
+                        <div class="outcome-card">
+                            <h3>03. Smart Watchdog</h3>
+                            <p>It watches your deadlines and alerts you before things go wrong, ensuring you never miss
+                                a critical deal.</p>
+                        </div>
+                        <div class="outcome-card">
+                            <h3>04. Beautiful Reports</h3>
+                            <p>Stop wrestling with Excel. Turn your messy numbers into clean, simple, and professional
+                                PDF summaries instantly.</p>
+                        </div>
+                        <div class="outcome-card">
+                            <h3>05. Ironclad Security</h3>
+                            <p>Unlike other AI, this stays on your own computer. Your database stays local, meaning 100%
+                                privacy and zero cloud leaks.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Database Page -->
+                <div id="page-db" class="page">
+                    <header>
+                        <h1>Database Infrastructure</h1>
+                        <p>Configure your secure business data connection.</p>
+                    </header>
+                    <div class="form-group">
+                        <label>DATABASE HOST</label>
+                        <input type="text" id="db_host" placeholder="localhost">
+                    </div>
+                    <div class="form-group">
+                        <label>SYSTEM USERNAME</label>
+                        <input type="text" id="db_user" placeholder="root">
+                    </div>
+                    <div class="form-group">
+                        <label>SECURITY PASSWORD</label>
+                        <input type="password" id="db_pass" placeholder="••••••••">
+                    </div>
+                    <div class="form-group">
+                        <label>TARGET DATABASE</label>
+                        <input type="text" id="db_name" placeholder="ai_business">
+                    </div>
+                    <button class="btn btn-primary" onclick="testConnection()">Verify Connectivity</button>
+                </div>
+
+                <!-- API Page -->
+                <div id="page-api" class="page">
+                    <header>
+                        <h1>Security Protocols</h1>
+                        <p>Authorize your AI and communication keys.</p>
+                    </header>
+                    <div class="form-group">
+                        <label>AI INTELLIGENCE KEY</label>
+                        <input type="text" id="gemini_key" placeholder="Enter Gemini Pro Key">
+                        <p class="input-help">Get your API key from <a href="https://aistudio.google.com/app/apikey"
+                                target="_blank">Gemini Console</a></p>
+                    </div>
+                    <div class="form-group">
+                        <label>TELEGRAM BOT TOKEN</label>
+                        <input type="text" id="bot_token" placeholder="Enter Bot Token">
+                        <p class="input-help">Create a bot via <a href="https://t.me/BotFather"
+                                target="_blank">@BotFather</a> on Telegram. Send <code>/newbot</code> and follow
+                            instructions.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>MARKET FORECAST KEY</label>
+                        <input type="text" id="weather_key" placeholder="Enter OpenWeather Key">
+                    </div>
+                    <button class="btn btn-primary" onclick="saveConfig()">Seal and Save</button>
+                </div>
+
+                <!-- Whitelist Page -->
+                <div id="page-whitelist" class="page">
+                    <header>
+                        <h1>Allowed Users</h1>
+                        <p>Whitelist authorized phone numbers (Max 3).</p>
+                    </header>
+                    <div class="form-group">
+                        <label>PRIMARY NUMBER</label>
+                        <input type="text" id="user_1" placeholder="+91 00000 00000">
+                    </div>
+                    <div class="form-group">
+                        <label>SECONDARY NUMBER</label>
+                        <input type="text" id="user_2" placeholder="+91 11111 11111">
+                    </div>
+                    <div class="form-group">
+                        <label>THIRD NUMBER</label>
+                        <input type="text" id="user_3" placeholder="+91 22222 22222">
+                    </div>
+                    <button class="btn btn-primary" onclick="saveWhitelist()">Authorize Access</button>
+                </div>
+
+                <!-- Status Page -->
+                <div id="page-status" class="page center-content">
+                    <div class="status-indicator">
+                        <div id="status-ring" class="ring offline"></div>
+                        <div id="status-dot" class="dot offline"></div>
+                    </div>
+                    <h2 id="status-text">ASSISTANT IS HAVING SOME REST</h2>
+                    <p id="status-desc">I am currently in standby mode.</p>
+                    <button id="toggle-btn" class="btn btn-status" onclick="toggleEngine()">WAKE UP AI</button>
+                </div>
+
+                <!-- Architect Page -->
+                <div id="page-dev" class="page center-content">
+                    <div class="profile-avatar">👨‍💻</div>
+                    <h1>Shreedhar Halli</h1>
+                    <p class="tagline">A MERN STACK DEVELOPER | AI ENTHUSIAST | AUTOMATION EXPERT</p>
+                    <p class="bio">Passionate about helping business owners scale through custom applications, IT
+                        services, and intelligent autopilot solutions.</p>
+                    <div class="contact-info">
+                        <p>Mobile: <a href="tel:+917447328144" target="_blank">+91 7447328144</a></p>
+                        <p>Whatsapp: <a
+                                href="https://web.whatsapp.com/send?phone=917447328144&text=Need%20IT%20Assistance"
+                                target="_blank">"Need IT Assistance"</a></p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="main.js"></script>
+</body>
+
+</html>

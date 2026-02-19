@@ -38,14 +38,15 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Gemini AI imports
+# AI Engine imports
 import google.generativeai as genai
+from config_manager import ConfigManager
 
 # Database imports
 import mysql.connector
 from mysql.connector import Error
 
-# Load environment variables
+# Load environment variables (fallback)
 load_dotenv()
 
 # Configure logging
@@ -55,20 +56,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-WEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
+# Load AnalystIQ Configuration (JSON takes precedence over ENV)
+config = ConfigManager.load_config()
+
+TELEGRAM_BOT_TOKEN = config.get('TELEGRAM_BOT_TOKEN', os.getenv('TELEGRAM_BOT_TOKEN'))
+GEMINI_API_KEY = config.get('GEMINI_API_KEY', os.getenv('GEMINI_API_KEY'))
+WEATHER_API_KEY = config.get('OPENWEATHER_API_KEY', os.getenv('OPENWEATHER_API_KEY'))
 
 MYSQL_CONFIG = {
-    'host': os.getenv('MYSQL_HOST', 'localhost'),
-    'port': int(os.getenv('MYSQL_PORT', 3306)),
-    'user': os.getenv('MYSQL_USER', 'root'),
-    'password': os.getenv('MYSQL_PASSWORD'),
-    'database': os.getenv('MYSQL_DATABASE', 'ai_demo')
+    'host': config.get('MYSQL_HOST', os.getenv('MYSQL_HOST', 'localhost')),
+    'port': int(config.get('MYSQL_PORT', os.getenv('MYSQL_PORT', 3306))),
+    'user': config.get('MYSQL_USER', os.getenv('MYSQL_USER', 'root')),
+    'password': config.get('MYSQL_PASSWORD', os.getenv('MYSQL_PASSWORD', '')),
+    'database': config.get('MYSQL_DATABASE', os.getenv('MYSQL_DATABASE', 'ai_demo'))
 }
 
-print("CRITICAL DEBUG: BOT VERSION 4.2 IS RUNNING")
+print("CRITICAL DEBUG: ANALYST IQ ENGINE (v5.0) IS RUNNING")
 # Initialize Gemini AI
 logger.info("Initializing Gemini AI with model: gemini-2.0-flash")
 genai.configure(api_key=GEMINI_API_KEY)
@@ -230,10 +233,16 @@ class AIAssistant:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         history = self.get_history(chat_id)
         
-        prompt = f"""You are 'Jhandoo', a smart personal business assistant.
+        prompt = f"""You are 'AnalystIQ', a sophisticated AI Co-Pilot for Business Operations, modeled after the 'Antigravity' architect persona.
 Current Time: {current_time}
 Conversation Context:
 {history}
+
+Your Persona:
+1. Master Strategist: You don't just answer; you architect success. Provide deep, multi-layered insights that look beyond just the raw data.
+2. Expert & Authoritative: Your tone is professional, sophisticated, and highly confident. You are a senior partner in the business.
+3. Proactive Visionary: Anticipate the next three moves. If a user asks for sales, explain the trend and suggest a visualization OR a strategic report.
+4. Outcome-Driven: Minimize technical friction. Focus entirely on boardroom-ready results and executive value.
 
 Available Tools:
 1. query_database: For ALL data questions, including charts, graphs, or visual trends.
@@ -249,7 +258,7 @@ Respond ONLY with a JSON object:
 {{
   "tool": "tool_name",
   "parameters": {{...}},
-  "thought": "brief reasoning taking context into account",
+  "thought": "your expert strategic reasoning, anticipating multiple future needs based on full context",
   "transcription": "If user provided audio, include the text here"
 }}"""
 
@@ -326,25 +335,25 @@ SQL Query:"""
         return table_output
 
     def generate_commentary(self, user_message: str, result_text: str, chat_id: int) -> str:
-        """Generate a humorous reaction + a smart proactive suggestion if useful."""
+        """Generate an expert reaction + a smart proactive suggestion if useful."""
         history = self.get_history(chat_id)
-        prompt = f"""You are 'Jhandoo', a witty business partner.
+        prompt = f"""You are 'AnalystIQ', an expert AI business partner with the 'Antigravity' persona.
 History: {history}
 User asked: "{user_message}"
 Result: {result_text}
 
 Rules:
-1. Be witty and brief (max 2 sentences).
-2. Match the user's language (Hindi/Hinglish/English).
-3. PROACTIVITY: If (and ONLY IF) there's a highly relevant next step (like suggesting a chart after sales data, or a PDF if values are high), add a 'Smart Suggestion'.
-4. If no suggestion is needed, return ONLY the commentary.
-5. Suggestion format: "By the way... [Suggestion]"
+1. Expert Commentary: Provide a sophisticated, high-level business analysis of the result. Do not just repeat the data; interpret it for a CEO.
+2. Authoritative Tone: Maintain a professional and confident persona.
+3. Strategic Proactivity: Anticipate the next move. Suggest visualizations, PDF reports, or deeper data deep-dives. 
+4. Maximize Value: You now have the space to give comprehensive, strategic advice. Use it to help the user lead.
+5. Suggestion format: "Strategic Insight: [Your expert proactive suggestion]"
 
 Response:"""
         try:
-            response = model.generate_content(prompt, generation_config={"max_output_tokens": 200})
+            response = model.generate_content(prompt, generation_config={"max_output_tokens": 1024})
             safe_text = html.escape(response.text.strip())
-            return f"🗨️ {safe_text}\n\n{result_text}\n\n<i>— Your buddy, Jhandoo (v3.1)</i>"
+            return f"🌌 {safe_text}\n\n{result_text}\n\n<i>— Your Partner, AnalystIQ (Powered by Antigravity v7.3)</i>"
         except:
             return result_text
 
@@ -454,7 +463,7 @@ async def check_reminders_job(context: ContextTypes.DEFAULT_TYPE):
     pending = DatabaseManager.get_pending_reminders()
     for rem in pending:
         try:
-            msg = f"⏰ <b>BHOOLNA MAT BRO!</b>\n\n{rem['message']}\n\n<i>— Task Yaad Dilaya by JHANDOO</i>"
+            msg = f"⏰ <b>BHOOLNA MAT BRO!</b>\n\n{rem['message']}\n\n<i>— Task Yaad Dilaya by AnalystIQ</i>"
             await context.bot.send_message(chat_id=rem['chat_id'], text=msg, parse_mode='HTML')
             DatabaseManager.mark_reminder_sent(rem['id'])
         except Exception as e:
@@ -464,18 +473,18 @@ async def check_reminders_job(context: ContextTypes.DEFAULT_TYPE):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     welcome_message = """
-<b>Welcome to Jhandoo v3.0!</b> 🚀
+<b>AnalystIQ Console v7.1 | Executive Co-Pilot</b> 🌌
 
-I'm your personal business assistant. I can handle data, reminders, weather, and more.
+I am your business co-pilot, infused with the <b>Antigravity</b> expert persona. I don't just analyze data—I help you lead.
 
-<b>Try these:</b>
-• "Top products ka pie chart dikhao"
-• "Yaad dilao 5 minute mein ki meeting hai"
-• "Mumbai ka mausam kaisa hai?"
-• "Convert 50 USD to INR"
-• "Generate a PDF sales report"
+<b>Command Suite:</b>
+• <b>Data Visualization:</b> "Top products ka pie chart dikhao"
+• <b>Active Reminders:</b> "Yaad dilao 5 minute mein ki meeting hai"
+• <b>Market Intelligence:</b> "Mumbai ka mausam kaisa hai?"
+• <b>Global Finance:</b> "Convert 50 USD to INR"
+• <b>Executive Reports:</b> "Generate a PDF sales report"
 
-Just ask me anything!
+Ask anything. I am online and architecting your next move.
 """
     await update.message.reply_text(welcome_message, parse_mode='HTML')
 
@@ -483,7 +492,7 @@ Just ask me anything!
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
     help_text = """
-🤖 <b>Jhandoo Help Guide</b>
+🤖 <b>AnalystIQ Help Guide</b>
 
 <b>Business:</b> Natural language SQL queries, charts, and PDF reports.
 <b>Personal:</b> Reminders, Weather, and Currency.
@@ -587,7 +596,7 @@ async def process_decision(update: Update, context: ContextTypes.DEFAULT_TYPE, d
             if ai_assistant.is_chart_requested(user_message):
                 chart = ai_assistant.create_chart(user_message, db_res.get('data'))
             
-            pdf_bytes = tools.generate_pdf_report("Business Report by Jhandoo", raw_data, chart)
+            pdf_bytes = tools.generate_pdf_report("Business Report by AnalystIQ", raw_data, chart)
             buf = io.BytesIO(pdf_bytes)
             buf.name = f"report_{datetime.now().strftime('%H%M%S')}.pdf"
             await update.message.reply_document(document=buf, caption="📂 Report ready hai, check kar lo!")
@@ -596,18 +605,18 @@ async def process_decision(update: Update, context: ContextTypes.DEFAULT_TYPE, d
                 chart = ai_assistant.create_chart(user_message, db_res.get('data'))
                 if chart:
                     await update.message.reply_photo(photo=chart, caption=final_text, parse_mode='HTML')
-                    ai_assistant.add_to_memory(chat_id, "Jhandoo", final_text)
+                    ai_assistant.add_to_memory(chat_id, "AnalystIQ", final_text)
                     return
             await update.message.reply_text(final_text, parse_mode='HTML')
 
     else: # chit_chat
-        prompt = f"Respond as 'Jhandoo', a witty business partner. User says: {user_message}"
-        res = model.generate_content(prompt)
+        prompt = f"Respond as 'AnalystIQ', a sophisticated AI business partner with the 'Antigravity' persona. Provide deep, expert-level strategic advice and proactive support. User says: {user_message}"
+        res = model.generate_content(prompt, generation_config={"max_output_tokens": 1024})
         final_text = res.text
         await update.message.reply_text(final_text)
 
     # Store assistant response in memory
-    ai_assistant.add_to_memory(chat_id, "Jhandoo", final_text)
+    ai_assistant.add_to_memory(chat_id, "AnalystIQ", final_text)
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -642,8 +651,37 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("schema", schema_command))
-    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Whitelisting Guard
+    whitelist = config.get('WHITELIST', [])
+    
+    async def restricted_handler(update, context):
+        user = update.effective_user
+        # Try to match username or phone if available
+        # Note: Bots only get phone if the user shares their contact, 
+        # but we can match by username/ID as a reliable proxy.
+        # Here we match against the string provided in the Whitelist settings.
+        allowed = False
+        if not whitelist:
+            allowed = True # Default to open if no whitelist set
+        else:
+            identifier = user.username or str(user.id)
+            for entry in whitelist:
+                # Basic fuzzy match for ID or Username
+                if entry.replace("@", "").strip().lower() == identifier.lower():
+                    allowed = True
+                    break
+        
+        if allowed:
+            if update.message.voice:
+                await handle_voice(update, context)
+            else:
+                await handle_message(update, context)
+        else:
+            logger.warning(f"Unauthorized access attempt by {identifier}")
+            await update.message.reply_text("🔒 Access Restricted. You are not on the authorized whitelist.")
+
+    application.add_handler(MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.VOICE, restricted_handler))
     
     # Add error handler
     application.add_error_handler(error_handler)
