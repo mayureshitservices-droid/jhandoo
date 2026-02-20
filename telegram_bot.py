@@ -85,6 +85,8 @@ class DatabaseManager:
     def add_reminder(user_id: int, chat_id: int, message: str, remind_at: datetime) -> bool:
         """Save a new reminder to the database."""
         query = "INSERT INTO reminders (user_id, chat_id, message, remind_at) VALUES (%s, %s, %s, %s)"
+        connection = None
+        cursor = None
         try:
             connection = mysql.connector.connect(**MYSQL_CONFIG)
             cursor = connection.cursor()
@@ -96,13 +98,15 @@ class DatabaseManager:
             return False
         finally:
             if connection and connection.is_connected():
-                cursor.close()
+                if cursor: cursor.close()
                 connection.close()
 
     @staticmethod
     def get_pending_reminders() -> List[dict]:
         """Fetch reminders that are due for delivery."""
         query = "SELECT id, chat_id, message FROM reminders WHERE status = 'pending' AND remind_at <= NOW()"
+        connection = None
+        cursor = None
         try:
             connection = mysql.connector.connect(**MYSQL_CONFIG)
             cursor = connection.cursor(dictionary=True)
@@ -114,13 +118,15 @@ class DatabaseManager:
             return []
         finally:
             if connection and connection.is_connected():
-                cursor.close()
+                if cursor: cursor.close()
                 connection.close()
 
     @staticmethod
     def mark_reminder_sent(reminder_id: int):
         """Mark a reminder as sent."""
         query = "UPDATE reminders SET status = 'sent' WHERE id = %s"
+        connection = None
+        cursor = None
         try:
             connection = mysql.connector.connect(**MYSQL_CONFIG)
             cursor = connection.cursor()
@@ -130,12 +136,14 @@ class DatabaseManager:
             logger.error(f"Error marking reminder sent: {e}")
         finally:
             if connection and connection.is_connected():
-                cursor.close()
+                if cursor: cursor.close()
                 connection.close()
 
     @staticmethod
     def execute_query(query: str) -> dict:
         """Execute a SQL query and return results."""
+        connection = None
+        cursor = None
         try:
             connection = mysql.connector.connect(**MYSQL_CONFIG)
             cursor = connection.cursor(dictionary=True)
@@ -165,7 +173,7 @@ class DatabaseManager:
             }
         finally:
             if connection and connection.is_connected():
-                cursor.close()
+                if cursor: cursor.close()
                 connection.close()
     
     @staticmethod
@@ -178,6 +186,8 @@ class DatabaseManager:
         ORDER BY TABLE_NAME, ORDINAL_POSITION
         """
         
+        connection = None
+        cursor = None
         try:
             connection = mysql.connector.connect(**MYSQL_CONFIG)
             cursor = connection.cursor()
@@ -201,7 +211,7 @@ class DatabaseManager:
             return "Schema information unavailable"
         finally:
             if connection and connection.is_connected():
-                cursor.close()
+                if cursor: cursor.close()
                 connection.close()
 
 
@@ -334,7 +344,7 @@ SQL Query:"""
         
         return table_output
 
-    def generate_commentary(self, user_message: str, result_text: str, chat_id: int) -> str:
+    def generate_commentary(self, user_message: str, result_text: str, chat_id: int) -> dict:
         """Generate an expert reaction + a smart proactive suggestion if useful."""
         history = self.get_history(chat_id)
         prompt = f"""You are 'AnalystIQ', an expert AI business partner with the 'Antigravity' persona.
@@ -352,10 +362,17 @@ Rules:
 Response:"""
         try:
             response = model.generate_content(prompt, generation_config={"max_output_tokens": 1024})
-            safe_text = html.escape(response.text.strip())
-            return f"🌌 {safe_text}\n\n{result_text}\n\n<i>— Your Partner, AnalystIQ (Powered by Antigravity v7.3)</i>"
+            insight = response.text.strip()
+            display_text = f"🌌 {html.escape(insight)}\n\n{result_text}\n\n<i>— Your Partner, AnalystIQ (Powered by Antigravity v7.3)</i>"
+            return {
+                "insight": insight,
+                "full_display": display_text
+            }
         except:
-            return result_text
+            return {
+                "insight": "Data analysis complete. Please review the detailed records below.",
+                "full_display": result_text
+            }
 
     def is_chart_requested(self, user_message: str) -> bool:
         keywords = ['chart', 'graph', 'plot', 'visualize', 'trend', 'pie', 'bar chart']
@@ -427,29 +444,94 @@ class AssistantTools:
         except:
             return "Currency conversion failed. Maybe the codes are wrong?"
 
-    @staticmethod
-    def generate_pdf_report(title: str, data_text: str, chart_bytes: Optional[bytes] = None) -> bytes:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("helvetica", 'B', 16)
-        pdf.cell(0, 10, title, 0, 1, 'C')
-        pdf.ln(5)
+class PDFReport(FPDF):
+    def header(self):
+        # Branding Header
+        self.set_fill_color(94, 106, 210) # Accent Color
+        self.rect(0, 0, 210, 40, 'F')
         
+        self.set_font("helvetica", "B", 24)
+        self.set_text_color(255, 255, 255)
+        self.cell(0, 20, "ANALYST IQ", ln=True, align="C")
+        
+        self.set_font("helvetica", "I", 10)
+        self.cell(0, 5, "Executive Data Intelligence & Business Insights", ln=True, align="C")
+        self.ln(15)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("helvetica", "I", 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f"Page {self.page_no()} | Generated by AnalystIQ Co-Pilot | {datetime.now().strftime('%Y-%m-%d %H:%M')}", align="C")
+
+    def chapter_title(self, title):
+        self.set_font("helvetica", "B", 14)
+        self.set_fill_color(240, 240, 240)
+        self.set_text_color(94, 106, 210)
+        self.cell(0, 10, f"  {title}", ln=True, fill=True)
+        self.ln(5)
+
+    def chapter_body(self, body):
+        self.set_font("helvetica", size=10)
+        self.set_text_color(50, 50, 50)
+        self.multi_cell(0, 7, body)
+        self.ln(5)
+
+    def draw_table(self, data):
+        if not data: return
+        
+        # Get column names from the first dictionary
+        headers = list(data[0].keys())
+        
+        self.set_font("helvetica", "B", 10)
+        self.set_fill_color(240, 240, 240)
+        self.set_text_color(0, 0, 0)
+        
+        # Determine column widths
+        col_width = 190 / len(headers)
+        
+        # Render Headers
+        for header in headers:
+            self.cell(col_width, 10, str(header).upper(), border=1, align="C", fill=True)
+        self.ln()
+        
+        # Render Rows
+        self.set_font("helvetica", size=9)
+        fill = False
+        for row in data:
+            self.set_fill_color(250, 250, 250) if fill else self.set_fill_color(255, 255, 255)
+            for header in headers:
+                self.cell(col_width, 8, str(row.get(header, "")), border=1, align="C", fill=True)
+            self.ln()
+            fill = not fill
+        self.ln(10)
+
+    @staticmethod
+    def generate_report(title: str, summary: str, data_list: List[dict], chart_bytes: Optional[bytes] = None) -> bytes:
+        pdf = PDFReport()
+        pdf.add_page()
+        
+        # 1. Executive Summary
+        pdf.chapter_title("EXECUTIVE SUMMARY")
+        clean_summary = summary.replace('<b>','').replace('</b>','').replace('<i>','').replace('</i>','').replace('<code>','').replace('</code>','').replace('🌌','')
+        pdf.chapter_body(clean_summary)
+        
+        # 2. Visual Intelligence (Chart)
         if chart_bytes:
-            # Use a unique filename or tempfile
+            pdf.chapter_title("VISUAL INTELLIGENCE")
             img_path = f"temp_chart_{int(time.time())}.png"
             with open(img_path, "wb") as f:
                 f.write(chart_bytes)
-            # Add image and ensure it doesn't overlap text
-            pdf.image(img_path, x=10, w=190)
-            pdf.ln(115) # Advance cursor past image
+            # Center the image
+            pdf.image(img_path, x=25, w=160)
+            pdf.ln(5)
             if os.path.exists(img_path):
                 os.remove(img_path)
+            pdf.add_page() # Start data on fresh page if there's a chart
 
-        pdf.set_font("helvetica", size=10)
-        # Clean data for PDF (remove HTML tags and newlines for clean printing)
-        clean_text = data_text.replace('<b>','').replace('</b>','').replace('<i>','').replace('</i>','').replace('<code>','').replace('</code>','')
-        pdf.multi_cell(0, 10, clean_text)
+        # 3. Detailed Data Analytics (Table)
+        pdf.chapter_title("DETAILED DATA ANALYTICS")
+        pdf.draw_table(data_list)
         
         return pdf.output()
 
@@ -589,17 +671,20 @@ async def process_decision(update: Update, context: ContextTypes.DEFAULT_TYPE, d
         
         db_res = DatabaseManager.execute_query(sql_result['query'])
         raw_data = ai_assistant.format_response(user_message, db_res)
-        final_text = ai_assistant.generate_commentary(user_message, raw_data, chat_id)
+        commentary_obj = ai_assistant.generate_commentary(user_message, raw_data, chat_id)
+        final_text = commentary_obj['full_display']
 
         if tool == 'generate_pdf':
             chart = None
+            db_data = db_res.get('data', [])
             if ai_assistant.is_chart_requested(user_message):
-                chart = ai_assistant.create_chart(user_message, db_res.get('data'))
+                chart = ai_assistant.create_chart(user_message, db_data)
             
-            pdf_bytes = tools.generate_pdf_report("Business Report by AnalystIQ", raw_data, chart)
+            # Pass ONLY the clean AI insights to the PDF summary
+            pdf_bytes = PDFReport.generate_report("Business Report by AnalystIQ", commentary_obj['insight'], db_data, chart)
             buf = io.BytesIO(pdf_bytes)
             buf.name = f"report_{datetime.now().strftime('%H%M%S')}.pdf"
-            await update.message.reply_document(document=buf, caption="📂 Report ready hai, check kar lo!")
+            await update.message.reply_document(document=buf, caption="📂 Your Professional Executive Report is ready!")
         else:
             if ai_assistant.is_chart_requested(user_message):
                 chart = ai_assistant.create_chart(user_message, db_res.get('data'))

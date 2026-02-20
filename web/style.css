@@ -234,6 +234,22 @@ h1 {
     line-height: 1.5;
 }
 
+.query-list {
+    list-style-type: none;
+    margin: 15px 0;
+    padding-left: 5px;
+}
+
+.query-list li {
+    color: var(--text-high);
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+    padding-left: 15px;
+    border-left: 2px solid var(--neon-cyan);
+    font-style: italic;
+    opacity: 0.9;
+}
+
 .form-group {
     margin-bottom: 24px;
     max-width: 500px;
